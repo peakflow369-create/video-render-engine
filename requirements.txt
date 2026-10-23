@@ -1,4 +1,8 @@
 fastapi
 uvicorn
-moviepy==1.0.3
 requests
+moviepy
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
