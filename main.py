@@ -14,8 +14,18 @@ FOLDER_ID = "1pylExuSqjHhAFiftEzWUoimRH8ry8sYk"
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 
+# Global state tracker for live monitoring
+job_state = {
+    "status": "IDLE",
+    "message": "System online. Awaiting quest."
+}
+
 def upload_direct_to_drive(file_path):
+    global job_state
     try:
+        job_state["status"] = "UPLOADING"
+        job_state["message"] = "Uploading processed video directly to Google Drive..."
+        
         SCOPES = ['https://www.googleapis.com/auth/drive.file']
         
         refresh_token = os.environ.get("GOOGLE_REFRESH_TOKEN")
@@ -51,28 +61,40 @@ def upload_direct_to_drive(file_path):
             body={'role': 'reader', 'type': 'anyone'}
         ).execute()
         
-        return file.get('webViewLink')
+        link = file.get('webViewLink')
+        job_state["status"] = "COMPLETED"
+        job_state["message"] = f"Upload successful! Drive Link: {link}"
+        return link
     except Exception as e:
-        print(f"Drive Upload Error: {e}")
+        error_msg = f"Drive Upload Error: {e}"
+        print(error_msg)
+        job_state["status"] = "FAILED"
+        job_state["message"] = error_msg
         return None
 
 def process_and_upload(data):
+    global job_state
     try:
         video_url = data.get("video_url")
         scenes = data.get("scenes", [])
         
         if not video_url:
-            print("Error: No video_url provided.")
+            job_state["status"] = "FAILED"
+            job_state["message"] = "Error: No video_url provided."
             return
 
-        print("Cloud-to-cloud downloading source video...")
+        job_state["status"] = "DOWNLOADING"
+        job_state["message"] = "Cloud-to-cloud downloading source video..."
+        
         video_path = "input.mp4"
         r = requests.get(video_url, stream=True)
         with open(video_path, "wb") as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
                 
-        print("Starting FFmpeg scene cutting & editing...")
+        job_state["status"] = "RENDERING"
+        job_state["message"] = "Starting FFmpeg scene cutting & editing..."
+        
         video = mp.VideoFileClip(video_path)
         clips = []
 
@@ -92,19 +114,28 @@ def process_and_upload(data):
                 threads=4
             )
             print("Rendering completed! Uploading directly to Google Drive...")
-            
-            drive_link = upload_direct_to_drive(OUTPUT_FILE)
-            print(f"Upload successful! Drive Link: {drive_link}")
+            upload_direct_to_drive(OUTPUT_FILE)
         else:
-            print("Error: No valid clips found to render.")
+            job_state["status"] = "FAILED"
+            job_state["message"] = "Error: No valid clips found to render."
             
     except Exception as e:
-        print(f"Pipeline Error: {e}")
+        error_msg = f"Pipeline Error: {e}"
+        print(error_msg)
+        job_state["status"] = "FAILED"
+        job_state["message"] = error_msg
 
 @app.post("/render")
 async def render_video(payload: dict, background_tasks: BackgroundTasks):
+    global job_state
+    job_state["status"] = "QUEUED"
+    job_state["message"] = "Quest received. Initializing pipeline..."
     background_tasks.add_task(process_and_upload, payload)
     return {"status": "PROCESSING_STARTED", "message": "Video rendering and cloud upload initiated."}
+
+@app.get("/status")
+async def get_status():
+    return job_state
 
 @app.get("/")
 async def root():
