@@ -10,7 +10,7 @@ app = FastAPI()
 OUTPUT_FILE = "output.mp4"
 FOLDER_ID = "1pylExuSqjHhAFiftEzWUoimRH8ry8sYk"
 
-# Load credentials securely from Environment Variables
+# Securely load credentials from Render Environment Variables
 CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
 CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 
@@ -45,6 +45,7 @@ def upload_direct_to_drive(file_path):
             fields='id, webViewLink'
         ).execute()
         
+        # Make the uploaded file publicly readable via link
         service.permissions().create(
             fileId=file['id'],
             body={'role': 'reader', 'type': 'anyone'}
